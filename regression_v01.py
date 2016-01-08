@@ -8,43 +8,128 @@ directory with all the other numpy files.
 import numpy as np
 import random
 import sys
-from sklearn import linear_model
 from sklearn.kernel_ridge import KernelRidge
+from sklearn import linear_model
+from sklearn import preprocessing
 
 
-def print_results(clf, results_absolute, results_squared, name, coefficients=False):
+def print_results(absolute, absolute_clipped, squared, squared_clipped, median, mean, name):
     '''
     This might be useful to standardize the output that gets printed.
     '''
-    print "Results for {}.".format(name)
-    print "-> Mean residual squared: {}".format(np.mean(results_squared))
-    print "-> Mean absolute difference: {}".format(np.mean(results_absolute))
-    if coefficients:
-        print "-> Part of the coefficient (full size = {}): \n{}".format(len(clf.coef_), clf.coef_[:10])
-        print "-> Intercept: {}".format(clf.intercept_)
+    print "{} on validation set:".format(name)
+    print "  -> Mean *ABSOLUTE* difference: {:.5f}".format(absolute)
+    print "    -> clipped: {:.5f}, uniform guess (median): {:.5f})".format(absolute_clipped, median)
+    print "  -> Mean *SQUARED* difference: {:.5f}.".format(squared)
+    print "    -> clipped: {:.5f}, uniform guess (mean): {:.5f})".format(squared_clipped, mean)
 
 
-def perform_regression(X_train, X_val, y_train, y_val):
+def perform_regression(X_train, X_val, y_train, y_val, results, standardized=True, full=True):
     '''
     Now we perform regression using whatever procedure we like. The kernels, especially RBF, will
-    take a long time with high dimensional data and is probably not even that effective.
+    take a long time with high dimensional data and are not that effective (they also seg-fault).
+    Also, store the results in 'results' according to key name.
     '''
 
     # This is the other major customization. Modify and add tuples of (regressor, name) to list.
+    # Don't use the Lasso predictor, it doesn't seem to do well.
+    print "Note: for y_train, mean = {:.5f}, median = {:.5f}.".format(np.mean(y_train), np.median(y_train))
     regressors = [ 
-                   (linear_model.LinearRegression(),             'Linear Regression'),
-                   (linear_model.Ridge(alpha = 1.0),             'Ridge Regression'),
-                   (KernelRidge(alpha = 1.0, kernel = 'linear'), 'Kernel Regression')
+                   (linear_model.LinearRegression(), 'Linear Regression'),
+                   #(linear_model.Ridge(alpha = 1e-10), 'Ridge Regression (alpha = 1e-10)'),
+                   (linear_model.Ridge(alpha = 1e-6), 'Ridge Regression (alpha = 1e-6)'),
+                   #(linear_model.Ridge(alpha = 1e-2), 'Ridge Regression (alpha = 1e-2)'),
+                   (linear_model.SGDRegressor(loss="huber", penalty="l2"), 'SGD Regressor (Huber, L2)')
                  ]
 
+    #if len(y_train) <= 40000:
+    #    regressors.append((KernelRidge(alpha = 1.0, kernel = 'linear'), 'Kernel Regression (Linear)'))
+
     # Regress on all of these and print the output.
+    median = np.mean( np.absolute(np.median(y_train) - y_val) )
+    mean = np.mean( (np.mean(y_train) - y_val) ** 2 )
+
     for item in regressors:
-        (clf,name) = item
-        clf.fit(X_train, y_train)
-        predictions = clf.predict(X_val)
-        results_absolute = np.absolute(predictions - y_val)
-        results_squared = (predictions - y_val) ** 2
-        print_results(clf, results_absolute, results_squared, name, coefficients=False)
+        clf,name = item
+        predictions = clf.fit(X_train, y_train).predict(X_val) # This fits model then tests it
+        absolute            = np.mean( np.absolute(predictions - y_val) )
+        absolute_clipped    = np.mean( np.absolute(np.clip(predictions,0,1) - y_val) )
+        squared             = np.mean( (predictions - y_val) ** 2 )
+        squared_clipped     = np.mean( (np.clip(predictions,0,1) - y_val) ** 2 )
+        print_results(absolute, absolute_clipped, squared, squared_clipped, median, mean, name)
+
+        # New, this is for the ultimate output
+        end = '-no-standardized-no-full'
+        if standardized and full:
+            end = '-yes-standardized-yes-full'
+        if standardized and not full:
+            end = '-yes-standardized-no-full'
+        if not standardized and full:
+            end = '-no-standardized-yes-full'
+
+        key1 = name + ' abs-no-clip' + end
+        key2 = name + ' abs-yes-clip' + end
+        key3 = name + ' sqerr-no-clip' + end
+        key4 = name + ' sqerr-yes-clip' + end
+        if key1 in results:
+            results[key1] = results[key1] + [absolute]
+        else:
+            results[key1] = [absolute]
+        if key2 in results:
+            results[key2] = results[key2] + [absolute_clipped]
+        else:
+            results[key2] = [absolute_clipped]
+        if key3 in results:
+            results[key3] = results[key3] + [squared]
+        else:
+            results[key3] = [squared]
+        if key4 in results:
+            results[key4] = results[key4] + [squared_clipped]
+        else:
+            results[key4] = [squared_clipped]
+
+        # Now let's save this to files (if desired, for histogram of output values)
+        # Actually this way would overwrite the other names from smaller training sizes...
+        #np.savetxt('predictions_' + name + '.txt', predictions)
+
+        # NEW AGAIN! Now let's divide into four quartiles based on y_val. I guess I'll just print
+        # here even though it'll be a bit awkward to try and retrieve this information. Yeah, have
+        # to figure out how to re-organize this nicely...
+        print "\nNow let's deal with the PERCENTILES:"
+        thresh1 = np.percentile(y_val, 33)
+        thresh2 = np.percentile(y_val, 66)
+        indices1 = np.where(y_val < thresh1)[0]
+        tmp1 = np.where(y_val >= thresh1)[0]
+        tmp2 = np.where(y_val < thresh2)[0]
+        indices2 = np.intersect1d(tmp1,tmp2)
+        indices3 = np.where(y_val >= thresh2)[0]
+       
+        # Now, using indices, extract the appropriate values, clip, take absolute value, then print.
+        predictions1 = predictions[indices1]
+        y_val1 = y_val[indices1]
+        results1 = np.mean(np.absolute(np.clip(predictions1,0,1)-y_val1))
+        print "For bottom third, avg abs diff = {}.".format(results1)
+        
+        predictions2 = predictions[indices2]
+        y_val2 = y_val[indices2]
+        results2 = np.mean(np.absolute(np.clip(predictions2,0,1)-y_val2))
+        print "For middle third, avg abs diff = {}.".format(results2)
+
+        predictions3 = predictions[indices3]
+        y_val3 = y_val[indices3]
+        results3 = np.mean(np.absolute(np.clip(predictions3,0,1)-y_val3))
+        print "For top third, avg abs diff = {}.".format(results3)
+        print ""
+
+    print "\nDone with this regression. The (current) results:"
+    keys_ordered = []
+    for key in results:
+        keys_ordered.append(key)
+    keys_ordered.sort()
+    for item in keys_ordered:
+        rounded = [float("{:5f}".format(x)) for x in results[item]]
+        print "\t{} \t{}".format(item, rounded)
+    print ""
 
 
 def concatenate_data(N, target_data, axis, center, grasp_axis_gravity_angle, moment_arm_mag,
@@ -126,14 +211,10 @@ def main():
     '''
 
     # These settings should be the only things to change, apart from perform_regression(...).
-    # options = [n_1, n_2, ..., n_k] where n_0 is the number of test set instances, and each n_i
-    # beyond that is the number of training instances to use. We iterate k-1 times.
-    val = [1000]
-    train = [10, 10, 10, 100, 100, 100, 1000, 1000, 1000, 5000, 5000, 5000, 10000, 10000, 10000,
-             25000, 25000, 25000, 50000, 50000, 50000]
-    options = val + train
-    num_val = options[0]
-    target = 'pfc'  # This is either pfc or efc. Use pfc only because values are a bit 'better'.
+    # train_sizes = [n_1, n_2, ..., n_k] where each n_i is the # of training instances to use.
+    num_val = 10000 # Change this to change validation size
+    train_sizes = [10000, 50000, 100000, 280000]
+    target = 'pfc'  # This is either pfc or efc. Use pfc because their values are 'better'.
 
     # Load in the target data.
     target_data = None
@@ -173,12 +254,19 @@ def main():
     validation_indices = indices[:num_val]
     other_indices = indices[num_val:]
 
+    # Let's store results in here. A bit manual since it requires some fixed values but w/e.
+    results = {}
+
     # For number of designated iterations, shuffle data THE SAME WAY for all data. Then regression.
-    for i in range(len(options)-1):
-        print "\n\n\tCurrently on regression iteration {} of {}.\n".format(i+1, len(options)-1)
-        print "Now extracting the training data of {} elements ...".format(options[i+1])
-        assert options[i+1] <= len(other_indices)
-        train_indices = np.array(random.sample(other_indices, options[i+1]))
+    for (i,num) in enumerate(train_sizes):
+        print "\n\n\tCurrently on regression iteration {} of {}.\n".format(i+1, len(train_sizes))
+        print "Now extracting the training data of {} elements ...".format(num)
+        assert num <= len(other_indices)
+        train_indices = np.array(random.sample(other_indices, num))
+        if num > 20:
+            print "train_indices[:20] = {}".format(train_indices[:20])
+        else:
+            print "train_indices = {}".format(train_indices)
         assert len(np.intersect1d(validation_indices, train_indices)) == 0
         indices = np.concatenate((validation_indices, train_indices)) # validation stays first/same
 
@@ -206,11 +294,47 @@ def main():
         y_train = y[num_val:]
         X_val = X[:num_val]
         y_val = y[:num_val]
+        scaler = preprocessing.StandardScaler().fit(X_train) # Only scale based on training
+        X_train_scaled = scaler.transform(X_train)
+        X_val_scaled = scaler.transform(X_val)
         print "Some statistics on our data for this regression shape:"
-        print "\tX_train.shape = {}\n\tX_val.shape = {}".format(X_train.shape, X_val.shape)
+        print "\tX_train.shape = {}\n\tX_val.shape = {}".format(X_train_scaled.shape, X_val_scaled.shape)
 
-        # Now call a regression-specific code and pretty print output.
-        perform_regression(X_train, X_val, y_train, y_val)
+        # NEW! let's run regression using different feature sets!
+        print "\nDoing regression on the FULL data:" # full=True (DIFFERENT later)
+        perform_regression(X_train_scaled, X_val_scaled, y_train, y_val, results, standardized=True, full=True)
+
+        ##X,y = concatenate_data(len(indices), target_data[indices],
+        ##                       axis = _axis[indices],
+        ##                       center = _center[indices],
+        ##                       grasp_axis_gravity_angle = _grasp_axis_gravity_angle[indices],
+        ##                       moment_arm_mag = _moment_arm_mag[indices],
+        ##                       moment_arms_gravity_angle = _moment_arms_gravity_angle[indices],
+        ##                       w1_curvature_window = _w1_curvature_window[indices],
+        ##                       w1_gradx_window = None,#_w1_gradx_window[indices],
+        ##                       w1_grady_window = None,#_w1_grady_window[indices],
+        ##                       w1_projection_disc = _w1_projection_disc[indices],
+        ##                       w1_projection_window = _w1_projection_window[indices],
+        ##                       w2_curvature_window = _w2_curvature_window[indices],
+        ##                       w2_gradx_window = None,#_w2_gradx_window[indices],
+        ##                       w2_grady_window = None,#_w2_grady_window[indices],
+        ##                       w2_projection_disc = _w2_projection_disc[indices],
+        ##                       w2_projection_window = _w2_projection_window[indices])
+
+        ##X_train = X[num_val:]
+        ##y_train = y[num_val:]
+        ##X_val = X[:num_val]
+        ##y_val = y[:num_val]
+        ##scaler = preprocessing.StandardScaler().fit(X_train) # Only scale based on training
+        ##X_train_scaled = scaler.transform(X_train)
+        ##X_val_scaled = scaler.transform(X_val)
+        ##print "Some statistics on our data for this regression shape:"
+        ##print "\tX_train.shape = {}\n\tX_val.shape = {}".format(X_train_scaled.shape, X_val_scaled.shape)
+
+        ##print "\nDoing regression on the PARTIAL data:" # Hence, full=False (NOT same as earlier)
+        ##perform_regression(X_train_scaled, X_val_scaled, y_train, y_val, results, standardized=True, full=False)
+
+    print "All done. Now let's print out the results (i.e., a dictionary):"
 
 
 if __name__ == '__main__':
