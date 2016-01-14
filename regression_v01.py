@@ -51,7 +51,7 @@ def perform_regression(X_train, X_val, y_train, y_val, results, standardized=Tru
     # Now add some other regressors (if desired) that take up more RAM.
     #if len(y_train) <= 30000:
     #    regressors.append((KernelRidge(alpha=1e-6, kernel='rbf'), 'Kernel Regression (RBF)'))
-    if len(y_train) <= 50000:
+    if len(y_train) <= 100000:
         regressors.append((svm.SVR(kernel='rbf', cache_size=2000), 'SVM Regression (RBF)'))
 
     # Consider what happens if we only take median or median, essentially this is random guessing.
@@ -215,7 +215,7 @@ def main():
     # These settings should be the only things to change, apart from perform_regression(...).
     # train_sizes = [n_1, n_2, ..., n_k] where each n_i is the # of training instances to use.
     num_val = 10000 # Change this to change validation size
-    train_sizes = [2000, 5000, 10000, 20000, 30000, 50000, 100000, 280000]
+    train_sizes = [100000]
     target = 'pfc'  # This is either pfc or efc. Use pfc because their values are 'better'.
 
     # Load in the target data.

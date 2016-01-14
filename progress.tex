@@ -1,0 +1,450 @@
+\documentclass[a4paper, 11pt]{article}
+\usepackage{float,fullpage,enumitem,hyperref,graphicx,url}
+
+\title{Some Progress on Robot Grasping}
+\author{Daniel Seita}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{The Regression Problem}
+
+The goal here is, given information about a grasp based on two gripping locations to predict the
+resulting expected or probability of the Ferrari-Canny metric (EFC and PFC, respectively). Before
+delving into the details of the problem, I first describe observations on the data.
+
+I had to remove some data points that had certain parameter values as NaN or below $-1 \times
+10^{100}$. After my preprocessing, Figures~\ref{fig:efc} and~\ref{fig:pfc} show the histogram of
+points for EFC and PFC respectively.  Both of these are right-skewed, with many elements closer to
+zero than one, and the effect is more pronounced for the EFC data. The histogram for PFC is
+interesting due to three bins having fewer elements compared to surrounding bins, but it is unlikely
+to be important.
+
+\begin{figure}[h]
+  \centering
+  \begin{minipage}{.48\textwidth}
+    \centering
+    \includegraphics[width=1\textwidth]{fig_efc}
+    \caption{The EFC data.}
+    \label{fig:efc}
+  \end{minipage}\hfill
+    \begin{minipage}{.48\textwidth}
+    \centering
+    \includegraphics[width=1\textwidth]{fig_pfc}
+    \caption{The PFC data.}
+    \label{fig:pfc}
+  \end{minipage}
+\end{figure}
+
+Some more data statistics, for EFC:
+
+\begin{itemize}[noitemsep]
+    \item Total elements: 302205
+    \item Minimum: 0.0 (occurs 28951 times)
+    \item Maximum: 0.0444
+    \item Mean: 0.0139
+    \item Median: 0.0124
+    \item Standard deviation: 0.0117
+\end{itemize}
+
+Similarly, here are the PFC statistics:
+
+\begin{itemize}[noitemsep]
+    \item Total elements: 302205
+    \item Minimum: 0.0098
+    \item Maximum: 0.9510
+    \item Mean: 0.2994
+    \item Median: 0.2647
+    \item Standard deviation: 0.2422
+\end{itemize}
+
+My conclusion seems to be that running the regression on PFC for now should be fine, and if
+regression works on PFC, it will work on EFC because the data distribution has the same shape. It is
+mainly the raw scale of features that differs so much.
+
+\begin{figure}[t]
+\begin{center}
+\begin{tabular}{c@{}c@{}c}
+\includegraphics[width=0.33\linewidth]{fig_mean} &
+\includegraphics[width=0.33\linewidth]{fig_std} &
+\includegraphics[width=0.33\linewidth]{fig_allpoints} \\
+(a) $L = -0.01094, H = 1.57817$ &
+(b) $L = 0.00006, H = 0.89950$ &
+(c) $L = -0.99999, H = 3.14051$ \\
+\end{tabular}
+\end{center}
+\caption{Plots (a) and (b) are histograms of the mean and standard deviation of the 1587 features in
+the data (after preprocessing to remove NaNs, etc., but not standardization). Figure (c) plots the
+histogram of the raw data's $302205\times 1587$ points. For all three figures, the $H$ and $L$
+indicate the highest and lowest points for those respective histograms.}
+\label{fig:more_data_stats}
+\end{figure}
+
+Next, I inspect the \emph{feature} values (\emph{not} the EFC or PFC metrics) just in case there is
+something out of whack.  Figure~\ref{fig:more_data_stats} shows some more plots and statistics. The
+full data has 1587 features. For each feature, I compute its mean and standard deviation. The
+respective histograms are in Figure~\ref{fig:more_data_stats}(a) and
+Figure~\ref{fig:more_data_stats}(b). Most features have a mean or standard deviation close to zero
+(but not exactly zero), and there are a few outlier features that cause the histogram to be skewed.
+
+I can also ``flatten'' the data matrix to get $302205\times 1587 = 479599335$ points.
+Figure~\ref{fig:more_data_stats}(c) shows the distribution of all the points. Most values are close
+to around zero, but the data is \emph{not} sparse; only 0.0985\% of the values in the data are zero.
+
+Now let's do some regression using Python and a (fairly weak) computer.
+
+
+
+\section{Raw Regression Results}
+
+To start off, I ran regression using the following procedures:
+
+\begin{itemize}
+    \item Linear Regression (abbreviated as ``Linear Regr''), which optimizes
+\[
+\min_w \; \|Xw - y\|_2^2,
+\]
+    for training matrix $X$ and target vector $y$.
+    \item Ridge Regression (abbreviated as ``Ridge ($\alpha$)''), which optimizes
+\[
+\min_w \; \|Xw - y\|_2^2 + \alpha \|w\|_2^2,
+\]
+    for training matrix $X$ and target vector $y$. For $\alpha$ values, I used $\alpha = 1e-2$
+    (i.e., 0.01) and $\alpha = 1e-6$, though I also tried other values but do not report them here
+    as the problem is largly insensitive to the choice of $\alpha$.
+
+    \item Stochastic Gradient Descent Regression (abbreviated as ``SGD Regr'').
+    \item Kernel Regression (abbreviated as ``Kernel Regr''), with a \emph{linear} kernel.
+\end{itemize}
+
+To evaluate those methods, I split the data I had into training and validation sets (shuffling, of
+course). I train on the training data, and then test on the validation and measure the \textbf{mean
+absolute difference} and \textbf{mean square error}. While the algorithms above technically optimize
+the squared error (or a regularized version), it is perhaps more intuitive to discuss the absolute
+error, which is why I present them both here.
+
+To make the problem more concrete, I set aside 10,000 samples to be the validation set. Then, I
+tested all the procedures discussed earlier on training set sizes of 10, 50, 100, 500, 1000, 5000,
+10000, 50000, 100000, and 280000 (the last one means we are using almost all of our data). This way,
+the validation set is fixed while the training set grows.
+
+I performed two other steps. First, I \textbf{standardized} the training data $X$ (but not the
+target $y$) and then ran regression. Second, I \textbf{clipped} the output to be between 0 and 1.
+During regression, our algorithm will sometimes predict negative values, especially when the target
+itself is really small (on the order of 0.05 or less). Clipping can never decrease our performance,
+so there is little reason not to use it.
+
+I ran this procedure three times -- with different validation sets each time -- and then averaged
+them together to get one curve (for a specific method).  The results are in
+Figures~\ref{fig:absdiff} and~\ref{fig:sqrdiff} for the two respective error types. These figures
+also have a thin line interpolated on the plot. \textbf{Those lines show the error one would get if
+one estimated the output solely based on the median or mean of the training data. In some way, this
+is like random guessing, so we would like our regression to substantially outperform this baseline.}
+
+To be precise, consider the absolute difference case. We have our training set $\{X,y\}$ of some
+size (which I vary in my experiments). One (obviously bad) way to estimate the output is to compute
+a median of $y$, and pick that for \emph{all} of our estimates of the validation data's PFC values.
+It is well known that the solution to $\min_y \; \sum_{i=1}^n |y - y_i|$ is to set $y$ to be a
+median of $\{y_1, \ldots, y_n\}$. A similar case holds for the mean square error, with the mean
+rather than the median.
+
+\begin{figure}[t]
+  \centering
+  \begin{minipage}{.48\textwidth}
+    \centering
+    \includegraphics[width=1\textwidth]{fig_absdiff}
+    \caption{Absolute difference metric.}
+    \label{fig:absdiff}
+  \end{minipage}\hfill
+    \begin{minipage}{.48\textwidth}
+    \centering
+    \includegraphics[width=1\textwidth]{fig_sqrdiff}
+    \caption{Squared error difference metric.}
+    \label{fig:sqrdiff}
+  \end{minipage}
+\end{figure}
+
+Here are some observations:
+
+\begin{enumerate}
+    \item Up to a training set size of 1000, increasing the training set actually worsens the
+    performance, but beyond that, training generally improves and, in the case of absolute
+    differences, hovers at around 13\% for our best-performing cases\footnote{Take the small
+    training set sizes with a grain of salt, because the data here has 1587 features, and 10-1000
+    samples may not be enough to learn much.}. The best number I have in my log is a 12.86\%
+    difference, so on average, we are that much off of the true PFC percentage.
+    \item The linear regression and ridge regression with $\alpha = 1e-6$ are very similar and
+    practically overlap for both figures, so it is difficult to see the regression. According to my
+    raw logs, one needs to check about four decimal places before observing a difference.
+    \item The curves follow similar shapes for the two error metrics. Therefore, for simplicity, we
+    only focus on the absolute error difference in future plots for convenience.
+    \item The kernel regression curve does not have any data points after 10,000 samples because it
+    was causing segmentation faults on my computer (i.e., it was using more than 15-16 GB of RAM).
+    \item Running one full trial to get data points (remember, I ran three) took just over 15
+    minutes to run on my weak computer. Therefore, if we have strong computation power, we can
+    definitely work with far more than 280,000 training instances.
+    \item Stochastic gradient descent appears to run faster than the other regressors, but the
+    difference is not substantial with this dataset. I only used the default SGD settings from
+    \texttt{scikit-learn} so it might be possible to increase the performance with a parameter
+    tweak, though I doubt it will go much lower than 13\%.
+    \item In all cases except the kernel regression --- which we probably shouldn't even do --- the
+    methods perform substantially better than ``random guessing,'' or always estimating using the
+    median or mean.
+\end{enumerate}
+
+In the following subsections, I will investigate several properties of the algorithm and their
+effect on performance. I will also investigate what happens when we remove certain features;
+Figures~\ref{fig:absdiff} and~\ref{fig:sqrdiff} used \emph{all} 1587 features.
+
+\subsection{Effect of Clipping}
+
+\begin{figure}[t]
+  \centering
+  \begin{minipage}{.48\textwidth}
+    \centering
+    \includegraphics[width=1\textwidth]{fig_clipping_effect}
+    \caption{The effect of clipping.}
+    \label{fig:clipping_effect}
+  \end{minipage}\hfill
+    \begin{minipage}{.48\textwidth}
+    \centering
+    \includegraphics[width=1\textwidth]{fig_predictions_clipping}
+    \caption{Predicted PFCs.}
+    \label{fig:pred_hist}
+  \end{minipage}
+\end{figure}
+
+Clipping the data means that, after we predict all the validation set values, we change all negative
+values to be 0, and all values greater than one to be one. Figure~\ref{fig:clipping_effect} shows
+the clipping effect on the linear regression case using 10k validation instances (i.e., the same
+procedure as in Figure~\ref{fig:absdiff}), but with only five training sizes (5k, 10k, 50k, 100k,
+and 280k) to avoid making the plot unreadable. The plot shows that clipping results in roughly a
+0.005 improvement, or half a percentage point, for the training instances.
+
+This may or may not be what one would have expected. We can gain some further insight by looking at
+how many points had to be clipped. Figure~\ref{fig:pred_hist} plots, for the 280k training data
+case, the histogram of the predictions linear regression made on the testing set. It turns out that
+7.7\% are below 0, so only those values were clipped, and in general, my ``eyeball test'' showed
+that those values generally did correspond to low (true) PFC values.
+
+What is interesting is the shape of the distribution. It is \emph{left-skewed}, and peaks at around
+0.5. This is unusual, as the true data distribution is \emph{right-skewed}. It might be worth
+investigating why the distribution is shaped like this. And yes, this is with standardization of the
+data.
+
+In any case, clipping the results is an obvious step and one that is cheap and can't hurt so there
+is no reason not to use it. I use it in future results.
+
+
+\subsection{Effect of Standardization}
+
+\begin{figure}[t]
+  \centering
+  \begin{minipage}{.48\textwidth}
+    \centering
+    \includegraphics[width=1\textwidth]{fig_standardization_effect}
+    \caption{The effect of standardization.}
+    \label{fig:standardization_effect}
+  \end{minipage}\hfill
+    \begin{minipage}{.48\textwidth}
+    \centering
+    \includegraphics[width=1\textwidth]{fig_remove_gradients}
+    \caption{Removing gradient features.}
+    \label{fig:remove_gradients}
+  \end{minipage}
+\end{figure}
+
+In general, I will always be standardizing the training data $X$ (though not the outputs, and this
+standardization does \emph{not} rely on data from validation as that would be cheating).
+
+Figure~\ref{fig:standardization_effect} shows the effect of standardization using the training set
+sizes of 5k, 10k, 50k, 100k, and 280k, on the validation set of 10k samples (same data points as
+earlier). With linear regression, standardization is not beneficial; it is difficult to see but the
+blue and red curves overlap each other and are accurate to about three decimal places. For ridge
+regression with $\alpha = 1e-2$ (this is generally larger than what we should be doing, though) the
+standardization \emph{does} help, putting the performance in line with linear regression. With
+stochastic gradient regression (not shown) standardization is \emph{worse} but catches up with lots
+of data. It seems like standardization does not provide much extra benefit but it doesn't hurt and
+it seems logical to continue using it in the future.
+
+\subsection{Effect of Feature Removal}
+
+It may be the case that with 1587 features, one can remove features and it will not hurt the
+regression. One of our features are the gradients at the two contact points (called \texttt{gradx}
+and \texttt{grady} internally). Removing both of those features, for the two contact points,
+resulted in a 911-dimensional feature vector.
+
+Figure~\ref{fig:remove_gradients} shows that, rather surprisingly, removing all those features does
+not seem to harm regression -- if anything it seems to \emph{help}, and these results are consistent
+with other trials not shown here (for space and Daniel Seita's time constraints). In the figure,
+``Part'' indicates that we are only using part of the feature set, i.e., all features other than
+gradients.
+
+For linear regression, avoiding the gradients results in a slight increase in performance though the
+difference is not great since the red and blue curves almost coincide in the plot (no gradients
+means 0.1330 versus 0.1333 with gradients). For stochastic gradient descent, however, avoiding
+gradients results in a far greater relative performance improvement. But then again, we would rather
+be doing linear regression anyway so perhaps this is not that beneficial and may be detrimental in
+the long run?
+
+I ran these on the \emph{same} validation and training set elements\footnote{Though clearly, the
+actual elements are different (911-dimensional vs 1587-dimensional), but the \emph{indices} are the
+same.} to make comparison consistent. It seems like the gradients are not that helpful, and a
+reduction from 1587 to 911 without loss in quality is nice. \textbf{While I will likely keep using
+the full feature set in the future, I should keep this in mind in case we need performance
+speed-ups.}
+
+
+
+\section{Regression for Different Types of Grasps}
+
+I now switch the attention towards another interesting question: whether the quality of the
+regression varies according to the type of grasp. In other words, we ``bucket'' the PFC values into
+several bins to see how the regression performs on each of those buckets. This is an interesting
+experiment because one might think that the regression only works on the low quality grasps (PFC
+close to zero) because there are so many of those.
+
+\begin{figure}[t]
+\begin{center}
+\begin{tabular}{c@{}c@{}c}
+\includegraphics[width=0.33\linewidth]{fig_thirds_first} &
+\includegraphics[width=0.33\linewidth]{fig_thirds_second} &
+\includegraphics[width=0.33\linewidth]{fig_thirds_third} \\
+(a) The first third. &
+(b) The second third. &
+(c) The third third. \\
+\end{tabular}
+\end{center}
+\caption{Performance of three algorithms on three parts of the data. The first, second, and third
+``thirds'' are (mutually disjoint, but exhaustive) subsets of the full validation dataset, with
+lower PFC values in the first third, and higher PFC values in the last third. Training set sizes
+were 10k, 50k, 100k, and 280k. \textbf{Be sure to look carefully at the y-axis values.}}
+\label{fig:thirds}
+\end{figure}
+
+I decided to break up the data into thirds. The procedure was as follows. For the 10,000 validation
+cases, I first did the predictions as normal. Then, I computed the 33rd and 66th percentiles of the
+\emph{validation} set's values (i.e., those are the ones fixed, \emph{not} the ones from the
+regression). For each element in the validation set, I assigned it to be in the first, middle, or
+last third based on its PFC value (lower means first third, higher means last third). Then I
+computed the average absolute difference metric again, but limited the focus to the thirds.
+
+Figure~\ref{fig:thirds} shows the performance on the three ``thirds'' of the data, using training
+set sizes of 10k, 50k, 100k, and 280k. The stochastic gradient regression is a bit inconsistent
+(makes sense due to the nature of the algorithm), but for linear and ridge regression, it is clear
+that \textbf{they perform best on the middle third of the data, and worst on the last third of the
+data}. Therefore, the higher the PFC, the more inaccurate our regression will be, and in a way that
+makes sense, because from Figure~\ref{fig:pfc}, the true distribution is right-skewed so there is
+not much data in the high PFC areas.  Figure~\ref{fig:pred_hist} also shows that our algorithms
+generally do not predict any values higher than 0.6.
+
+I think the algorithm would improve on the last third if we had more balanced training data.
+
+
+
+\section{Support Vector Regression}
+
+\begin{figure}[t]
+\begin{center}
+\begin{tabular}{c@{}c@{}c}
+\includegraphics[width=0.49\linewidth]{fig_absdiff_svm_jan14} &
+\includegraphics[width=0.49\linewidth]{fig_sqrdiff_svm_jan14} \\
+(a) Mean absolute difference. &
+(b) Mean squared difference. \\
+\end{tabular}
+\end{center}
+\caption{Performance of linear regression, SGD regression, and SVM regression (using RBF kernel) on
+a validation dataset of 10,000 elements. The evaluation is based on mean absolute difference (a) or
+mean squared difference (b). Again, look carefully at the y-axis values. The thin blue lines
+interpolated on the plots are the equivalent of random guessing. The training set sizes: 2000, 5000,
+10000, 20000, 50000, 75000, 100000, and 280000.}
+\label{fig:svr_results}
+\end{figure}
+
+\begin{figure}[t]
+\begin{center}
+\begin{tabular}{c@{}c@{}c}
+\includegraphics[width=0.33\linewidth]{fig_preds_lin} &
+\includegraphics[width=0.33\linewidth]{fig_preds_sgd} &
+\includegraphics[width=0.33\linewidth]{fig_preds_svm} \\
+(a) Linear regression. &
+(b) SGD regression. &
+(c) SVM regression (RBF). \\
+\end{tabular}
+\end{center}
+\caption{Histograms of the predicted values for linear regression, SGD regression, and SVM
+regression (using RBF kernel) on a validation dataset of 10,000 elements. The SVM regression results
+in a notable difference in the histogram and is more in line with Figure~\ref{fig:pfc}, explaining
+its stronger performance. Also, note that SVM only uses 30k samples.}
+\label{fig:svr_histograms}
+\end{figure}
+
+I'm surprised I didn't try this out earlier, but it looks like \textbf{Support Vector Regression}
+may be the best way to regress on this data. SVM regression is similar to kernel ridge regression
+since both use kernels, but they optimize different loss functions. The \texttt{sklearn}
+documentation (and other sources I've looked at) suggest that SVM regression and kernel ridge
+regression will have similar performance, so I didn't bother testing with SVM regression ... until
+now.
+
+My results are in Figure~\ref{fig:svr_results}, comparing ridge regression, SGD regression, and SVM
+regression, with the SVM using a \emph{Radial Basis Function (RBF)} kernel. I generated this figure
+in a similar manner as I did for Figures~\ref{fig:absdiff} and~\ref{fig:sqrdiff}. The validation set
+was still size 10000, and I varied the number of training set elements, but did not use the largest
+values for SVM regression due to computational limitations. The SVM regression lets me get down to
+almost 0.1 off of the true PFC, on average. Also, note that I only used 911 features, i.e., I got
+rid of the gradient features.
+
+Some observations:
+
+\begin{enumerate}
+    \item SVM regression easily performs better than the other two algorithms, and in fact, judging
+    by the shape of its curves, its performance still has not leveled off and would improve with
+    more training data. \textbf{With 75,000 training instances, we can get a mean absolute error of
+    0.0990 on the testing set (of 10,000 instances)}.
+
+    \item Even with a 911-dimensional feature vector (I got rid of the gradient features), SVM
+    regression takes a long time. I got similar results with the full feature vector (for the RBF
+    kernel), and also got worse results with the polynomial kernel for SVM regression (results not
+    shown here), though I have not rigorously tested the former claim.
+
+    \item The mean absolute difference for SVM regression is \emph{consistent} among all three
+    ``thirds,'' which is \emph{unlike} the other algorithms, which struggle at the high probability
+    PFC points. (These results are not expliclty shown here.)
+
+    \item Figure~\ref{fig:svr_histograms} shows why the SVM regression performs better, and why it
+    may be better at predicting high PFC values. These show the histogram of predicted values from
+    the three algorithms. The SVM regression predicts lots of values closer to zero (but mostly
+    positive) and the distribution \emph{generally decreases} off. As Figure~\ref{fig:pfc}
+    indicates, this follows the similar shape as the true distribution of the data. For some reason,
+    the other two algorithms have histograms that \emph{increase} to about 0.5 and then level off
+    sharply. They are not learning the correct shape of distributions, and their MAE stagnates at
+    around 0.13.
+
+    \item Generating~\ref{fig:svr_results} took roughly four and a half hours of computational time
+    on my laptop, mainly because of SVM regression (especially the 50k and 75k training set sizes).
+    The time it took for ridge regression and SGD regression was negligible in comparison.
+\end{enumerate}
+
+The result of this section seems clear: use SVM regression with an RBF kernel, on the reduced
+feature set (though I think it should be OK with the full feature set).
+
+
+
+
+\section{Neural Networks for Regression}
+
+TODO
+
+
+
+
+\end{document}
+
+% Daniel: use this if I ever need to use one figure at a time.
+%\begin{figure}[h]
+%\centering
+%\includegraphics[width=0.5\textwidth]{...}
+%\caption{ ... }
+%\label{fig:...}
+%\end{figure}
