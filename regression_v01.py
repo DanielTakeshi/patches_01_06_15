@@ -42,18 +42,17 @@ def perform_regression(X_train, X_val, y_train, y_val, results, standardized=Tru
     # This is the other major customization. Modify and add tuples of (regressor, name) to list.
     # Don't use the Lasso predictor, it doesn't seem to do well.
     print "Note: for y_train, mean = {:.5f}, median = {:.5f}.".format(np.mean(y_train), np.median(y_train))
-    regressors = [] 
+    regressors = [ 
                  #  (linear_model.LinearRegression(), 'Linear Regression')
-                 #  #(linear_model.Ridge(alpha = 1e-6), 'Ridge Regression (alpha = 1e-6)'),
-                 #  #(linear_model.SGDRegressor(loss="huber", penalty="l2"), 'SGD Regressor (Huber, L2)')
-                 #]
+                  (linear_model.Ridge(alpha = 1e-6), 'Ridge Regression (alpha = 1e-6)'),
+                  (linear_model.SGDRegressor(loss="huber", penalty="l2"), 'SGD Regressor (Huber, L2)')
+                  ]
 
     # Now add some other regressors (if desired) that take up more RAM.
     #if len(y_train) <= 30000:
     #    regressors.append((KernelRidge(alpha=1e-6, kernel='rbf'), 'Kernel Regression (RBF)'))
-    if len(y_train) <= 40000:
+    if len(y_train) <= 50000:
         regressors.append((svm.SVR(kernel='rbf', cache_size=2000), 'SVM Regression (RBF)'))
-        regressors.append((svm.SVR(kernel='rbf', cache_size=2000, C=1e-4), 'SVM Regression (RBF C=1e-4)'))
 
     # Consider what happens if we only take median or median, essentially this is random guessing.
     median = np.mean( np.absolute(np.median(y_train) - y_val) )
@@ -216,7 +215,7 @@ def main():
     # These settings should be the only things to change, apart from perform_regression(...).
     # train_sizes = [n_1, n_2, ..., n_k] where each n_i is the # of training instances to use.
     num_val = 10000 # Change this to change validation size
-    train_sizes = [40000]
+    train_sizes = [2000, 5000, 10000, 20000, 30000, 50000, 100000, 280000]
     target = 'pfc'  # This is either pfc or efc. Use pfc because their values are 'better'.
 
     # Load in the target data.
