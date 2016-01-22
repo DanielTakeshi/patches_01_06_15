@@ -51,8 +51,8 @@ def perform_regression(X_train, X_val, y_train, y_val, results, standardized=Tru
     # Now add some other regressors (if desired) that take up more RAM.
     #if len(y_train) <= 30000:
     #    regressors.append((KernelRidge(alpha=1e-6, kernel='rbf'), 'Kernel Regression (RBF)'))
-    if len(y_train) <= 100000:
-        regressors.append((svm.SVR(kernel='rbf', cache_size=2000), 'SVM Regression (RBF)'))
+    #if len(y_train) <= 100000:
+    #    regressors.append((svm.SVR(kernel='rbf', cache_size=2000), 'SVM Regression (RBF)'))
 
     # Consider what happens if we only take median or median, essentially this is random guessing.
     median = np.mean( np.absolute(np.median(y_train) - y_val) )
@@ -332,6 +332,14 @@ def main():
         scaler = preprocessing.StandardScaler().fit(X_train) # Only scale based on training
         X_train_scaled = scaler.transform(X_train)
         X_val_scaled = scaler.transform(X_val)
+
+        do_we_want_to_save = True
+        if do_we_want_to_save:
+            np.save("data_X_train_scaled", X_train_scaled)
+            np.save("data_y_train", y_train)
+            np.save("data_X_val_scaled", X_val_scaled)
+            np.save("data_y_val", y_val)
+
         print "Some statistics on our data for this regression shape:"
         print "\tX_train.shape = {}\n\tX_val.shape = {}".format(X_train_scaled.shape, X_val_scaled.shape)
 

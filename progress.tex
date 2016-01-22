@@ -374,7 +374,7 @@ interpolated on the plots are the equivalent of random guessing. The training se
 \end{tabular}
 \end{center}
 \caption{Histograms of the predicted values for linear regression, SGD regression, and SVM
-regression (using RBF kernel) on a validation dataset of 10,000 elements. The SVM regression results
+regression (using RBF kernel) on a validation dataset of 10000 elements. The SVM regression results
 in a notable difference in the histogram and is more in line with Figure~\ref{fig:pfc}, explaining
 its stronger performance. Also, note that SVM only uses 30k samples.}
 \label{fig:svr_histograms}
@@ -391,17 +391,17 @@ My results are in Figure~\ref{fig:svr_results}, comparing ridge regression, SGD 
 regression, with the SVM using a \emph{Radial Basis Function (RBF)} kernel. I generated this figure
 in a similar manner as I did for Figures~\ref{fig:absdiff} and~\ref{fig:sqrdiff}. The validation set
 was still size 10000, and I varied the number of training set elements, but did not use the largest
-values for SVM regression due to computational limitations. The SVM regression lets me get down to
-almost 0.1 off of the true PFC, on average. Also, note that I only used 911 features, i.e., I got
-rid of the gradient features.
+value (280000) for SVM regression due to computational limitations. The SVM regression lets me get
+down to just below 0.1 off of the true PFC, on average. Also, note that I only used 911 features,
+i.e., I got rid of the gradient features.
 
 Some observations:
 
 \begin{enumerate}
     \item SVM regression easily performs better than the other two algorithms, and in fact, judging
     by the shape of its curves, its performance still has not leveled off and would improve with
-    more training data. \textbf{With 75,000 training instances, we can get a mean absolute error of
-    0.0990 on the testing set (of 10,000 instances)}.
+    more training data. \textbf{With 100,000 training instances, we can get a mean absolute error of
+    0.0964 on the testing set (of 10,000 instances)}.
 
     \item Even with a 911-dimensional feature vector (I got rid of the gradient features), SVM
     regression takes a long time. I got similar results with the full feature vector (for the RBF
@@ -421,9 +421,10 @@ Some observations:
     sharply. They are not learning the correct shape of distributions, and their MAE stagnates at
     around 0.13.
 
-    \item Generating~\ref{fig:svr_results} took roughly four and a half hours of computational time
-    on my laptop, mainly because of SVM regression (especially the 50k and 75k training set sizes).
-    The time it took for ridge regression and SGD regression was negligible in comparison.
+    \item Generating Figure~\ref{fig:svr_results} took roughly seventeen hours of computational time
+    on my laptop, mainly because of SVM regression.  The time it took for ridge regression and SGD
+    regression was negligible in comparison. For instance, running \emph{just} the 100k training
+    samples case for SVM regression took eleven and a half hours.
 \end{enumerate}
 
 The result of this section seems clear: use SVM regression with an RBF kernel, on the reduced
