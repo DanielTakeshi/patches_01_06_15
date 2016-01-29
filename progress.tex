@@ -7,7 +7,9 @@
 
 \begin{document}
 \maketitle
+\tableofcontents
 
+\clearpage
 \section{The Regression Problem}
 
 The goal here is, given information about a grasp based on two gripping locations to predict the
@@ -410,7 +412,7 @@ Some observations:
 
     \item The mean absolute difference for SVM regression is \emph{consistent} among all three
     ``thirds,'' which is \emph{unlike} the other algorithms, which struggle at the high probability
-    PFC points. (These results are not expliclty shown here.)
+    PFC points. (These results are not explicitly shown here.)
 
     \item Figure~\ref{fig:svr_histograms} shows why the SVM regression performs better, and why it
     may be better at predicting high PFC values. These show the histogram of predicted values from
@@ -435,17 +437,29 @@ feature set (though I think it should be OK with the full feature set).
 
 \section{Neural Networks for Regression}
 
-TODO
+I finally got some neural network results, and it looks like neural networks might be a viable
+alternative to SVM regression, and it might even be faster. I implemented one using the
+\texttt{theano} Python library. My network has one hidden layer of 1000 nodes, and \emph{one} output
+node, which outputs the predicted P(FC) metric. That output node is processed with the sigmoid
+function. It sure is convenient that the sigmoid's output is $[0,1]$, exactly the range of P(FC).
+The network is fully connected -- I am not using convolutional ones for now. I think we need a
+better feature set before we can use the convolutional ones.
+
+But anyway, \textbf{using a training size of 100k, I can get the validation (size 10k as usual) MAE
+to 0.10893}. This is almost as good as the value of 0.0964 I reported earlier for the SVM regression
+with an RBF kernel, but the difference is that with a good GPU, doing the neural network code is
+\emph{much} faster -- it took less than 11 minutes to do that, compared to 11.5 hours with the same
+SVM regression code.
+
+With 280k training data points, I can get the error down to \textbf{0.10296}, but to get
+substantially better results, I probably need (1) a new architecture, or more importantly, (2)
+better data!
 
 
+
+
+
+\section{NEW DATA!}
 
 
 \end{document}
-
-% Daniel: use this if I ever need to use one figure at a time.
-%\begin{figure}[h]
-%\centering
-%\includegraphics[width=0.5\textwidth]{...}
-%\caption{ ... }
-%\label{fig:...}
-%\end{figure}

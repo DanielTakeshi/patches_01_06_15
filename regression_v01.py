@@ -215,7 +215,7 @@ def main():
     # These settings should be the only things to change, apart from perform_regression(...).
     # train_sizes = [n_1, n_2, ..., n_k] where each n_i is the # of training instances to use.
     num_val = 10000 # Change this to change validation size
-    train_sizes = [100000]
+    train_sizes = [280000]
     target = 'pfc'  # This is either pfc or efc. Use pfc because their values are 'better'.
 
     # Load in the target data.
