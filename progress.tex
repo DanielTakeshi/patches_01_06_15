@@ -1,5 +1,6 @@
 \documentclass[a4paper, 11pt]{article}
 \usepackage{float,fullpage,enumitem,hyperref,graphicx,url}
+\graphicspath{{figures/}}
 
 \title{Some Progress on Robot Grasping}
 \author{Daniel Seita}
@@ -459,7 +460,60 @@ better data!
 
 
 
-\section{NEW DATA!}
+\section{New Data (February 2016 edition)}
 
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=1\textwidth]{fig_new_histograms_pfc_vfc}
+  \caption{The updated PFC/VFC data histograms.}
+  \label{fig:updated_pfc_vfc}
+\end{figure}
+
+Whew, as of the beginning of February, 2016, I have updated data. The changes, as far as I am aware,
+are:
+
+\begin{itemize}
+    \item Object IDs, i.e., which object was used for the grasp. I don't think this is going to be
+    particularly useful to us now but we can always use it later in case we want to keep certain
+    objects out of our training (or testing) data.
+    \item The surface normals, so that we can identify directions appropriately (i.e., earlier we
+    didn't have a sense of where these patches were located, so they could have been really close to
+    each other, which is normally a bad grasp).
+    \item Instead of the expected Ferrari-Canny metric, we are now using the \emph{variance} of it,
+    which must rely on knowing the distribution of the P(FC), I suppose.
+    \item Instead of just one P(FC) (and one V(FC)), we have three different versions, numbered
+    0.05, 0.1, and 0.2. I'm assuming these represent a measure of uncertainty, so the lower the
+    number (or the higher, not sure?) the less uncertainty in the measurement.
+\end{itemize}
+
+These are low-dimensional features and therefore will not substantially increase the runtime of
+regression.
+
+What's interesting is that the distribution of P(FC)s seems to be different from last time.
+Figure~\ref{fig:updated_pfc_vfc} shows six subplots with the six histograms of the data (note that
+the vertical axis is not the same across all subplots). There seem to be a lot more P(FC)s closer to
+one now, almost as if the data were flipped from before. Well, except for the 0.2 version of P(FC).
+With respect to V(FC), its distributions will likely be tough for regression to learn even after we
+clip the output to be in $[0,0.25]$.
+
+The mean of the values in the six sub-plots, in order (starting from the top row, going right,
+then the bottom row):
+
+\begin{verbatim}
+[ 0.82980355  0.7332635   0.57711644  0.10364071  0.14597935  0.19168528]
+\end{verbatim}
+
+
+\subsection{Linear, Ridge, and SVM Regression on the New Data}
+
+TODO
+
+\subsection{Neural Networks on the New Data}
+
+TODO
+
+\subsection{Other Comments on the Classifiers and Data}
+
+TODO
 
 \end{document}

@@ -95,11 +95,11 @@ def main():
     num_val = 10000
 
     # The training set sizes, [n_1, n_2, ..., n_k], to use, to test on a fixed validation set.
-    train_sizes = [20000]
+    train_sizes = [5000, 10000, 30000, 50000, 100000, 200000, 300000]
 
     # Which of the files to use for each feature (currently have 0 through 20 to use). Note that each
     # file contains perhaps 100k points so this list should be large enough for num_val and train_sizes.
-    file_numbers = [0,1]
+    file_numbers = [0,1,2]
 
     # Decide which features to use (True/False). If using all, data loading takes about 90 seconds.
     center                  = True
@@ -109,13 +109,13 @@ def main():
     patch_orientation       = True
     surface_normals         = True
     w1_curvature_window     = True
-    w1_gradx_window         = False
-    w1_grady_window         = False
+    w1_gradx_window         = True
+    w1_grady_window         = True
     w1_projection_disc      = True
     w1_projection_window    = True
     w2_curvature_window     = True
-    w2_gradx_window         = False
-    w2_grady_window         = False
+    w2_gradx_window         = True
+    w2_grady_window         = True
     w2_projection_disc      = True
     w2_projection_window    = True
 
@@ -143,7 +143,7 @@ def main():
     # Just for some extra debugging/information -- show dimensions of features.
     for i in range(len(data_features)):
         if data_features[i] is not None:
-            print data_features[i].shape
+            print(data_features[i].shape)
     print("The above with file_numbers = {}".format(file_numbers))
 
     # Load the target data. Be careful that the prefix is right, and that we have enough files.
@@ -200,17 +200,20 @@ def main():
     # For number of designated iterations, shuffle data THE SAME WAY for all data. Then regression.
     for (i,num) in enumerate(train_sizes):
 
-        print "\n\n\tCurrently on regression iteration {} of {}.\n".format(i+1, len(train_sizes))
-        print "Now extracting the training data of {} elements ...".format(num)
+        ################
+        # PREPARE DATA #
+        ################
+
+        print("\n\n\tCurrently on regression iteration {} of {}.\n".format(i+1, len(train_sizes)))
+        print("Now extracting the training data of {} elements ...".format(num))
         assert num <= len(other_indices)
-        train_indices = np.array(random.sample(other_indices, num))
+        train_indices = np.array(random.sample(list(other_indices), num))
         assert len(np.intersect1d(validation_indices, train_indices)) == 0
         indices = np.concatenate((validation_indices, train_indices)) # validation stays first/same
 
         # NOW let's finally form our data in the (X,y) format by forming X based on our features.
+        # Then split the data into training and validation sets.
         X,y = concatenate_data(indices, target, data_features)
-
-        # Split into training and validation.
         X_train = X[num_val:]
         y_train = y[num_val:]
         X_val = X[:num_val]
@@ -222,7 +225,7 @@ def main():
         X_val_scaled = scaler.transform(X_val)
         data = [(X_train_scaled,y_train),(X_val_scaled,y_val)]
 
-        # Now let's print some statistics, including the baseline mean and median performance.
+        # Now let's print some basic statistics, including a "baseline" mean and median performance.
         print("Some statistics on our data for this regression shape:")
         print("\tX_train.shape = {}\n\tX_val.shape = {}".format(X_train_scaled.shape, X_val_scaled.shape))
         mean = np.mean( (np.mean(y_train) - y_val) ** 2 )
@@ -230,14 +233,32 @@ def main():
         print("Baseline M.S.E. performance: {:.5f}.".format(mean))
         print("Baseline M.A.E. performance: {:.5f}.".format(median))
 
-        # FINALLY let's run *actual* regression using this feature set!
-        regression_linear.do_regression(data, alpha=1e-6)
-        regression_svm.do_regression(data, kernel='rbf', cache_size=2000)
+        #####################
+        # ACTUAL REGRESSION #
+        #####################
+
+        output = 'results/'
+
+        # Linear regression first. Save predictions for plotting.
+        preds_01 = regression_linear.do_regression(data, alpha=1e-3)
+        preds_02 = regression_linear.do_regression(data, alpha=1e-8)
+        np.save(output + 'preds_01_train_' + str(num) + '_iter_' + str(i), preds_01)
+        np.save(output + 'preds_02_train_' + str(num) + '_iter_' + str(i), preds_02)
+
+        # SVM kernel regression, but if I'm doing more than 30k data points, it takes a long time.
+        if num < 40000:
+            preds_03 = regression_svm.do_regression(data, kernel='rbf', cache_size=2000)
+            np.save(output + 'preds_03_train_' + str(num) + '_iter_' + str(i), preds_03)
+    
+        # Fully connected neural networks. Unfortunately I don't know how to return predictions.
         regression_fc_nn.do_regression(data, learning_rate=0.001, L1_reg=0.00, L2_reg=0.00001, 
                                        n_epochs=100, batch_size=100, n_hidden=100,
                                        hidden_activation=T.nnet.sigmoid)
 
-    print "\nAll Done! Whew!"
+        # At the very end, let's actually save the y_val output so we can plot the residuals.
+        np.save(output + 'y_val_train_' + str(num) + '_iter_' + str(i), y_val)
+
+    print("\nAll Done! Whew!")
 
 
 if __name__ == '__main__':
