@@ -18,9 +18,12 @@ across multiple data matrices, (3) delete any feature that is all zero, if any [
 issue, ignore ...], and (4) normalize the data, so zero-mean plus variance. This will require going
 through each file individually to collect the statistics (weighted by the number of data points),
 and then going through each one AGAIN to actually perform the standardization.
+
+UPDATE: Huh, apparently some object IDs are missing. Expect to see <= 501 instead of 501 exactly.
 """
 
 import numpy as np
+import os
 import random
 import sys
 
@@ -180,7 +183,7 @@ def do_part_one():
     print("\nAll Done! Whew!")
 
 
-def do_part_two(num_features = 1595, num_groups):
+def do_part_two(num_features = 1595, num_groups = 5):
     """ 
     Now proceed to the second part. With all of the data files defined, we have to re-shuffle. I
     really hope Python's garbage collection can handle this kind of stuff, or else I'm going to have
@@ -211,7 +214,6 @@ def do_part_two(num_features = 1595, num_groups):
         since I'm ignoring the three from "center of mass."
     :param: num_groups For each of the 21 original files, we split it up into 'num_groups' groups.
     """
-
     num_files = 21
 
     # Store mean and std here as we sift through data. We'll keep appending them as extra rows, so
@@ -219,17 +221,14 @@ def do_part_two(num_features = 1595, num_groups):
     feature_mean = []
     feature_std = []
 
-    # Also store where the object IDs were located, to help redistribute data later.
-    object_ids = []
-
     # Load each file and get the data information. Python should garbage-collect as needed.
     print("Now gathering the means and standard deviations for the original files.")
     for k in range(0, num_files):
         padded_digit = '{0:02d}'.format(k)
+        print("Currently on " + padded_digit)
         data = np.load("grasp_data_" + padded_digit + ".npy")
         feature_mean.append(np.mean(data, axis=1))
         feature_std.append(np.std(data, axis=1))
-        object_ids.append(data[0])
     assert np.array(feature_mean).shape == np.array(feature_std).shape
     print("Done with data gathering for feature means and standard deviations.")
 
@@ -237,22 +236,41 @@ def do_part_two(num_features = 1595, num_groups):
     full_mean = np.mean(np.array(feature_mean), axis=0)
     full_std = np.mean(np.array(feature_std), axis=0)
 
-    # Have to rehspae to get broadcasting to work
-    full_mean = np.reshape(full_mean, (len(full_mean),1))
-    full_std = np.reshape(full_std, (len(full_std),1))
+    # Have to reshape to get broadcasting to work, and ignore the first element.
+    full_mean = np.reshape(full_mean[1:], (len(full_mean)-1,1))
+    full_std = np.reshape(full_std[1:], (len(full_std)-1,1))
 
     # Go through each file *again* to change the data for each matrix, and store it in new files.
     # To be specific, *after* we normalize the full matrix (to get normalized_data), we will have to
     # split it up into N groups, where N = num_groups. But we have to divide according to object ID.
     for k in range(0, num_files):
         padded_digit = '{0:02d}'.format(k)
-        data = np.load("grasp_data_" + padded_digit + ".npy")
-        normalized_data = (data - full_mean) / full_std
+        old_data = np.load("grasp_data_" + padded_digit + ".npy")
+        object_ID_info = old_data[0] # Get all the object IDs present in this matrix (w/duplicates).
+        old_data = old_data.T # Transpose so old_data[i] is the i-th grasp instead of i-th feature.
 
-        # TODO need to fix this to split into five groups!
-        np.save("grasp_data_normalized_" + padded_digit, normalized_data)
+        # Randomize the (unique) object IDs for this particular file and split into groups.
+        objectIDs_rand = np.random.permutation( np.unique(object_ID_info) )
+        assert len(objectIDs_rand) <= 501, "Error, len(objectIDs_rand) = {}".format(len(objectIDs_rand))
+        objectIDs_groups = np.array_split(objectIDs_rand, num_groups)
 
-    print("Done with standardizing of each of the " + str(num_files) + " data files.")
+        # For each group of random object IDs, extract elements with that ID, and save the file.
+        for (index,list_of_IDs) in enumerate(objectIDs_groups):
+            padded_index = '{0:02d}'.format(index)
+            group_indices = []
+
+            # Iterate through to get the *indices*, NOT the data.
+            for (index2,val) in enumerate(object_ID_info):
+                if val in list_of_IDs:
+                    group_indices.append(index2)
+
+            # With the indices in hand, extract data from old data, dump ID, and transpose.
+            partitioned_data = (old_data[np.array(group_indices)].T)[1:]
+            assert partitioned_data.shape[0] == num_features-1, "partitioned_data.shape[0] = {}".format(partitioned_data.shape[0])
+
+            # Let's normalize that partitioned data *transposed*. The object ID was already dumped.
+            normalized_data = ((partitioned_data - full_mean) / full_std)
+            np.save("grasp_data_norm_" + padded_digit + "_" + padded_index, normalized_data)
 
     print("\nAll Done! Whew!")
 
@@ -271,6 +289,7 @@ def do_part_three(num_output = 10):
 if __name__ == '__main__':
     # Do NOT do both parts. It's either the first one, or the second one!
     #do_part_one()
-    do_part_two(num_features = 1595, num_groups = 5)
+    do_part_two()
+    #do_part_two(num_features = 1595, num_groups = 10)
     #do_part_three(num_output = 10)
 
