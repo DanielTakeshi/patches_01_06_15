@@ -140,13 +140,6 @@ def do_part_one():
         target_vfc_010 = np.load("vfc_f_01/vfc_f_0.100000_tg_0.005000_rg_0.100000_to_0.005000_ro_0.100000_" + padded_digit + ".npz")['arr_0']
         target_vfc_020 = np.load("vfc_f_02/vfc_f_0.200000_tg_0.010000_rg_0.200000_to_0.010000_ro_0.200000_" + padded_digit + ".npz")['arr_0']
 
-        assert not np.isnan(np.sum(target_pfc_005)), "NaN with the target values."
-        assert not np.isnan(np.sum(target_pfc_010)), "NaN with the target values."
-        assert not np.isnan(np.sum(target_pfc_020)), "NaN with the target values."
-        assert not np.isnan(np.sum(target_vfc_005)), "NaN with the target values."
-        assert not np.isnan(np.sum(target_vfc_010)), "NaN with the target values."
-        assert not np.isnan(np.sum(target_vfc_020)), "NaN with the target values."
-
         # Now getting this into a (1,N) shape rather than (N,) (i.e., nothing after the comma).
         N = len(target_pfc_005) 
         target_pfc_005 = np.reshape(target_pfc_005, (1,N))
@@ -155,10 +148,19 @@ def do_part_one():
         target_vfc_005 = np.reshape(target_vfc_005, (1,N))
         target_vfc_010 = np.reshape(target_vfc_010, (1,N))
         target_vfc_020 = np.reshape(target_vfc_020, (1,N))
-        print("Done with loading raw data, AND the targets (shape: {}).".format(target_pfc_005.shape))
+        target = np.concatenate((target_pfc_005,
+                                 target_pfc_010,
+                                 target_pfc_020,
+                                 target_vfc_005,
+                                 target_vfc_010,
+                                 target_vfc_020,),
+                                axis=0) # I.e., concatenate the default way.
+        assert not np.isnan(np.sum(target)), "NaN with the target values."
+        print("Done with loading raw data, AND the targets (shape of target: {}).".format(target))
 
         # Now concatenate the data into one matrix. We need N to be the number of elements (i.e., columns)
         data_matrix = concatenate_data(N, data_features)
+        print("Shape of data matrix: {}.".format(data_matrix.shape))
         
         # Detect if any rows are zero (effectively, 1e-7, btw). That way, we should delete them later.
         # UPDATE: This is no longer an issue, but I have the framework in case I need to change it.
@@ -173,12 +175,7 @@ def do_part_one():
         # UPDATE change of plans, don't use fmt='%1.7f', just use np.save(...).
         print("Now saving the data_matrix, with shape: {} with SEVEN decimal places of precision.".format(data_matrix.shape))
         np.save("grasp_data_" + padded_digit, data_matrix)
-        np.save("grasp_target_pfc_005_" + padded_digit, target_pfc_005)
-        np.save("grasp_target_pfc_010_" + padded_digit, target_pfc_010)
-        np.save("grasp_target_pfc_020_" + padded_digit, target_pfc_020)
-        np.save("grasp_target_vfc_005_" + padded_digit, target_vfc_005)
-        np.save("grasp_target_vfc_010_" + padded_digit, target_vfc_010)
-        np.save("grasp_target_vfc_020_" + padded_digit, target_vfc_020)
+        np.save("grasp_target_" + padded_digit, target)
 
     print("\nAll Done! Whew!")
 
@@ -275,7 +272,7 @@ def do_part_two(num_features = 1595, num_groups = 5):
     print("\nAll Done! Whew!")
 
 
-def do_part_three(num_output = 10):
+def do_part_three(num_features = 1595, num_output = 10):
     """ 
     Part 3, where we take all the resulting shuffled files and combine them together. See the
     comments from the part two method, which actually contains some of this stuff.
@@ -283,13 +280,34 @@ def do_part_three(num_output = 10):
     Then, *after* this combination, re-shuffle *again* just to be safe. Then we're done.
     """
 
+    # TODO deal with the target files as well!
+
+    # Make sure this is the correct naming convention, i.e., "grasp_data_norm".
+    normalized_files = [x for x in os.listdir(".") if "grasp_data_norm" in x]
+    rand_norm_files = np.random.permutation(normalized_files)
+    rand_norm_splits = np.array_split(rand_norm_files, num_output)
+
+    # For each output index, we take the list of files to load and (horizontally) combine them.
+    for k in range(num_output):
+        padded_digit = '{0:02d}'.format(k)
+        files = rand_norm_splits[k]
+        result = np.load(files[0])
+        for i in range(1,len(files)):
+            result = np.concatenate((result, np.load(files[i])), axis=1)
+        assert len(result) == (K-1)
+        
+        # At last, save the combined data as text files. And the target. (We'll split inside BIDMach)
+        np.savetxt("grasp_bidmach_data_" + padded_digit + ".txt", result, fmt='%1.7f')
+        #np.savetxt("grasp_bidmach_target_" + padded_digit, result, fmt='1.7%f')
+        print("Finished with " + padded_digit)
+
     print("\nAll Done! Whew!")
 
 
 if __name__ == '__main__':
     # Do NOT do both parts. It's either the first one, or the second one!
-    #do_part_one()
-    do_part_two()
-    #do_part_two(num_features = 1595, num_groups = 10)
-    #do_part_three(num_output = 10)
+    K = 1595 # Includes the object ID
+    do_part_one()
+    #do_part_two(num_features = K, num_groups = 5)
+    #do_part_three(num_features = K, num_output = 10)
 
