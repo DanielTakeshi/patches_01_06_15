@@ -462,7 +462,7 @@ better data!
 
 \section{New Data (February 2016 edition)}
 
-\begin{figure}[h]
+\begin{figure}[t]
   \centering
   \includegraphics[width=1\textwidth]{fig_new_histograms_pfc_vfc}
   \caption{The updated PFC/VFC data histograms.}
@@ -479,15 +479,17 @@ are:
     \item The surface normals, so that we can identify directions appropriately (i.e., earlier we
     didn't have a sense of where these patches were located, so they could have been really close to
     each other, which is normally a bad grasp).
-    \item Instead of the expected Ferrari-Canny metric, we are now using the \emph{variance} of it,
-    which must rely on knowing the distribution of the P(FC), I suppose.
+    \item Instead of the expected Ferrari-Canny metric \textbf{EDIT (02/15/2016): This is
+    Probability of Force Closure, actually ... sorry, I'd been confused on what metric we were
+    using.}, we are now using the \emph{variance} of it, which must rely on knowing the distribution
+    of the P(FC), I suppose.
     \item Instead of just one P(FC) (and one V(FC)), we have three different versions, numbered
     0.05, 0.1, and 0.2. I'm assuming these represent a measure of uncertainty, so the lower the
     number (or the higher, not sure?) the less uncertainty in the measurement.
 \end{itemize}
 
 These are low-dimensional features and therefore will not substantially increase the runtime of
-regression.
+regression. In all, the \textbf{data is of dimension 1598}.
 
 What's interesting is that the distribution of P(FC)s seems to be different from last time.
 Figure~\ref{fig:updated_pfc_vfc} shows six subplots with the six histograms of the data (note that
@@ -503,17 +505,242 @@ then the bottom row):
 [ 0.82980355  0.7332635   0.57711644  0.10364071  0.14597935  0.19168528]
 \end{verbatim}
 
+Now let's discuss the regression results. For now, assume we are using P(FC) of 0.1 as our output.
 
-\subsection{Linear, Ridge, and SVM Regression on the New Data}
+\subsection{Ridge, SVM, and Neural Network Regression on the New Data}
 
-TODO
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.6\textwidth]{fig_new_data_mae}
+  \caption{The MAE for three different algorithms on training sets of various sizes.}
+  \label{fig:new_data_mae}
+\end{figure}
 
-\subsection{Neural Networks on the New Data}
-
-TODO
+I ran regression using all the features on a subset of the data. Figure~\ref{fig:new_data_mae} shows
+the MAE plot for three algorithms (ridge regression with $\alpha = 0.001$, SVM kernel regression
+with an RBF kernel, and a fully connected neural network with one hidden layer of 1000 units, and
+the tanh nonlinearity. In all data points here, the validation set was a fixed held-out set of
+10,000 grasps.
 
 \subsection{Other Comments on the Classifiers and Data}
 
-TODO
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.8\textwidth]{fig_predictions_and_errors}
+  \caption{Histograms of the predictions (top two) and prediction errors (bottom two) of the ridge
+  regression and SVM regression algorithms, as they were in Figure~\ref{fig:new_data_mae} on their
+  \emph{largest} training sets. Fortunately, both algorithms seem to learn the correct distribution
+  shape (top two plots) and the errors, as expected, follow a right-skewed distribution, so most are
+  actually less than 0.1 --- that's good. The neural networks data is not available.}
+  \label{fig:predictions_and_errors}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=1\textwidth]{fig_new_data_thirds}
+  \caption{Performance of the ridge regression and SVM regression (as they were in
+  Figure~\ref{fig:new_data_mae}) on the different ``thirds'' of the data. I split the validation set
+  equally into thirds based on the true P(FC) values. \textbf{Notice that the y-axis labels are the
+  same among all subplots}, indicating that the first third (corresponding to low P(FC) in the true
+  data) is harder to learn or results in weaker performance, which makes sense because most of the
+  data is concentrated in the higher values of P(FC) closer to 1.}
+  \label{fig:new_data_thirds}
+\end{figure}
+
+Figure~\ref{fig:predictions_and_errors} plots the predictions and the prediction residuals for the
+ridge regression and SVM regression algorithms, on their largest training set sizes from
+Figure~\ref{fig:new_data_mae}. (I could not figure out how to get this data from the neural networks
+code but it must be possible.) Quick observations: fortunately, both algorithms learn the correct
+left-skewed distribution shape of the P(FC) for the 0.05 case (see Figure~\ref{fig:updated_pfc_vfc}
+for the true distribution). And also, the error residuals have a distribution that makes sense. A
+handful of bad errors are causing the MAE to rise.
+
+Figure~\ref{fig:new_data_thirds} shows these two same algorithms and how they perform on the
+different ``thirds'' of the data. It's similar to Figure~\ref{fig:thirds}, except the performance is
+different due to the reversed data distribution. Also, notice that the y-axis values are the same
+across all three subplots.
+
+Here's some work for the future:
+\begin{enumerate}
+    \item Test with output other than the pfc of 0.1.
+    \item More testing with feature selection to see if we can remove useless features.
+    \item Use BIDMach; the data is 28 GB and doesn't fit in RAM.
+    \item Test using neural networks with two hidden layers, and also try out the ReLU
+    non-linearity.
+    \item Figure out how to extract predictions (EDIT: use BIDMach for this).
+\end{enumerate}
+
+
+
+\clearpage
+\section{The Home Stretch (February 22 Onwards)}
+
+I finally managed to get the data suitable for BIDMach's neural networks and random forest models. I
+shuffled and split it into 20 groups of files, and it is also the case that they are divided by
+``object ID'' so one object ID is not dispersed among many files\footnote{Each object ID is actually
+dispersed in two files due to a quirk in how I processed the data, but don't worry, I take this into
+account when I split the data into training and testing sets.}. We want this so that the testing set
+consists of object IDs that we have not seen yet. Note that the object ID itself is \emph{not} a
+feature; it's just used to help split the data.
+
+I shuffled \emph{and} normalized data so that we wouldn't have to do that inside
+BIDMach\footnote{I'm not sure if it's possible to shuffle data from a Files DataSource in BIDMach,
+so I shuffled beforehand, and getting the correct mean and standard deviation would require a full
+pass over the data. If it doesn't fit in RAM, then it makes more sense to also do that computation
+beforehand.}.
+
+Here are the options that I set for BIDMach (I'll describe what this means later in words).
+\textbf{Don't worry about knowing this. It's mainly so that I remember what settings I used for
+BIDMach.} The first part comes when I manually write values in my training script. The second part
+is when I print \texttt{opts0.what}.
+
+\footnotesize
+\begin{verbatim}
+opts0: BIDMach.networks.Net.FDSopts = BIDMach.networks.Net$FDSopts@54124706
+opts0.nstart: Int = 20
+opts0.nend: Int = 29
+opts0.batchSize: Int = 100
+opts0.reg1weight: BIDMat.FMat = 0.00010000
+opts0.npasses: Int = 20
+opts0.hasBias: Boolean = true
+opts0.links: BIDMat.IMat = 1
+opts0.lrate: BIDMat.FMat = 0.030000
+opts0.texp: BIDMat.FMat = 0.30000
+opts0.evalStep: Int = 53
+opts0.nweight: Float = 1.0E-4
+net: BIDMach.networks.layers.NodeSet = BIDMach.networks.layers.NodeSet@27b58873
+opts0.nodeset: BIDMach.networks.layers.NodeSet = BIDMach.networks.layers.NodeSet@27b58873
+Option Name       Type          Value
+===========       ====          =====
+addConstFeat      boolean       false
+aopts             Opts          null
+autoReset         boolean       true
+batchSize         int           100
+checkPointFile    String        null
+checkPointInterval  float         0.0
+cumScore          int           0
+debug             int           0
+debugMem          boolean       false
+dim               int           256
+dmask             Mat           null
+dorows            boolean       false
+doubleScore       boolean       false
+dropout           float         0.5
+eltsPerSample     int           500
+epsilon           float         1.0E-5
+evalStep          int           53
+featThreshold     Mat           null
+featType          int           1
+fnames            List          List(<function1>, <f...
+hasBias           boolean       true
+initsumsq         float         1.0E-5
+langevin          float         0.0
+links             IMat          1
+localDir          String        
+lookahead         int           2
+lrate             FMat          0.030000
+mask              FMat          null
+momentum          FMat          null
+nend              int           29
+nesterov          FMat          null
+nmodelmats        int           0
+nodeset           NodeSet       BIDMach.networks.lay...
+npasses           int           20
+nstart            int           20
+nweight           float         1.0E-4
+nzPerColumn       int           0
+order             int           0
+pexp              FMat          0.50000
+policies          Function2[]   null
+predict           boolean       false
+pstep             float         0.01
+putBack           int           -1
+r1nmats           int           1
+reg1weight        FMat          0.00010000
+resFile           String        null
+sample            float         1.0
+sampleFiles       float         1.0
+sizeMargin        float         3.0
+startBlock        int           8000
+targetNorm        float         1.0
+targmap           Mat           null
+texp              FMat          0.30000
+throwMissing      boolean       false
+updateAll         boolean       false
+useCache          boolean       true
+useDouble         boolean       false
+useGPU            boolean       true
+vexp              FMat          0.50000
+waitsteps         int           3
+\end{verbatim}
+\normalsize
+
+The main thing I change during the training trials was the \texttt{nend} variable. Here it's 29,
+which means I'm using files numbered 20 through 28, so nine training files. It turns out that for
+the data I had, 9 files results in 1,132,630 training points. Not bad. Also, I halved the learning
+rate to 0.015 once I began using at least 11 out of the 20 training files. Otherwise, the settings
+should be fixed across different trials (i.e., with different training set sizes).
+
+What does this neural net look like?
+
+\begin{itemize}
+    \item It's fully connected with three layers of 500, 300, and 180 hidden units, respectively.
+    \item All hidden layers use the sigmoid non-linearity (surprisingly, the ReLUs and hyperbolic
+    tangents don't work that well).
+    \item Aside from the hidden layers, there is an input layer with 1594 units, and a single output
+    node with the predicted P(FC) value.
+    \item The net has $L_1$-regularization, and uses ADAGrad during training.
+    \item It does \emph{not} use dropout.
+\end{itemize}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=1\textwidth]{fig_nn_bidmach_try01}
+  \caption{The MAE and training time for neural networks from BIDMach. The left uses a \emph{log}
+  scale for the training instances; the right uses the \emph{raw} scale. Thus, on the left, the
+  maximum point on the x-axis scale corresponds to a value of 5 million training data points (though
+  we have ``only'' 2.5 million).}
+  \label{fig:bidmach_try01}
+\end{figure}
+
+Figure~\ref{fig:bidmach_try01} shows the first stab at BIDMach, training for 20 passes over the data
+and using a held-out test set (of unique object IDs) of 50k elements, kept consistent across all
+trials. Previously, we used 10k testing points, so our test results should be less noisy. Our
+training set sizes ranged from 10k to 2,270,484.
+
+\textbf{Conclusion?} The results are clearly superior to those from Figure~\ref{fig:new_data_mae},
+especially once the dataset is around a million elements. The best MAE for P(FC) that we get on the
+testing set is \textbf{0.0695}, from the second-largest training set.
+
+On another pleasant note, we see that the run time is (mostly) linear. \textbf{I'll be recording the
+running time of all experiments I do in the near future}, in case we want to report this. For
+\emph{predicting}, the BIDMach code can predict blazingly fast, so that's not an issue.
+
+\subsection{Tuning the Net}
+
+Here are some notes on performance with different settings, in an effort to get to never-before-seen
+performance levels:
+
+\begin{enumerate}
+    \item Using the same network as those from Figure~\ref{fig:bidmach_try01}, and training with the
+    largest training data there with 100 iterations (so it's the same as what's reported in the
+    figure, but I trained it 5 times longer), \textbf{I get an MAE of 0.0631}, the best one yet. The
+    training time was 7918.9 seconds, or about 131 minutes of training time, so a few hours seems
+    like a reasonable upper bound for training, as I don't plan on running more than 100 iterations,
+    or using much larger neural network architectures.
+
+    \item Scratch that, we have a new MAE record. I ran for 50 iterations (just to save time, I
+    won't run for that many iterations in the future ... perhaps 20 is a good value to stay with)
+    but this time, I changed the architecture so that it is now an 800-400-200 network. This net got
+    an \textbf{MAE of 0.0533} with a training time of 4474.1 seconds. With the same architecture but
+    with 20 iterstions results in 1788.3 seconds and an MAE of 0.0710.
+
+    \item With a slightly larger network (1000, 500, 250), I get an MAE of 0.0628 and a training
+    time of 1800.0 seconds (20 iterations).
+\end{enumerate}
+
+
+
+
 
 \end{document}
