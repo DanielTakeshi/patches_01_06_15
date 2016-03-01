@@ -4,11 +4,9 @@
 This consists of three parts. Call the functions (in the main method) based on the stage I'm in.
 
 The first part will go through the 21 data files and, for each one, create a BIDMach-like matrix,
-stored as a simple text file using np.savetxt(...) with some number of digits of precision. Note
-that we will be using the object IDs as the "first feature" so the first row in all 21 matrices
-should contain the object IDs, and also, each file will have 501 objects. ALSO, we will go through
-all six of the possible targets and then make those into BIDMach arrays as well! EDIT: use pickle
-files, not text files.
+stored as a simple npy file using np.save(...), along with all the targets (the targets are in their
+own matrix). Note that we will be using the object IDs as the "first feature" so the first row in
+all 21 matrices should contain the object IDs, and also, each file will have 501 objects.
 
 The second (and third) parts will use these 21 data files and reorganize the data to make it more
 suitable for BIDMach and regression. In particular, it will: (1) create a smaller number of data
@@ -79,9 +77,6 @@ def do_part_one():
     """
     Set up the data loading pipeline, feature selection, regression options, and other miscellaneous
     tasks as needed to make the results clean, crisp, readable and informative.
-
-    OH, now let's do something new: keep track of all the rows (i.e., features) that are zero, at
-    the end, and print those out.
     """
     
     for file_number in range(0,20+1):
@@ -153,10 +148,10 @@ def do_part_one():
                                  target_pfc_020,
                                  target_vfc_005,
                                  target_vfc_010,
-                                 target_vfc_020,),
+                                 target_vfc_020),
                                 axis=0) # I.e., concatenate the default way.
         assert not np.isnan(np.sum(target)), "NaN with the target values."
-        print("Done with loading raw data, AND the targets (shape of target: {}).".format(target))
+        print("Done with loading raw data, AND the targets (shape of target: {}).".format(target.shape))
 
         # Now concatenate the data into one matrix. We need N to be the number of elements (i.e., columns)
         data_matrix = concatenate_data(N, data_features)
@@ -169,11 +164,8 @@ def do_part_one():
         boolean_data_matrix = data_matrix > epsilon
         print(np.where(~boolean_data_matrix.any(axis=1))[0])
 
-        # The really annoying thing is that %1.6f will require at least one float before the decimal,
-        # but allows more if the number is at least 10, BUT the six means that there will ALWAYS be six
-        # decimal places, so 1.1 turns into 1.100000. That's annoying.
-        # UPDATE change of plans, don't use fmt='%1.7f', just use np.save(...).
-        print("Now saving the data_matrix, with shape: {} with SEVEN decimal places of precision.".format(data_matrix.shape))
+        # Now just save using np.save(...) to make reloading this data faster.
+        print("Now saving the data_matrix, with shape: {}...".format(data_matrix.shape))
         np.save("grasp_data_" + padded_digit, data_matrix)
         np.save("grasp_target_" + padded_digit, target)
 
@@ -182,30 +174,29 @@ def do_part_one():
 
 def do_part_two(num_features = 1595, num_groups = 5):
     """ 
-    Now proceed to the second part. With all of the data files defined, we have to re-shuffle. I
-    really hope Python's garbage collection can handle this kind of stuff, or else I'm going to have
-    to split this up into two or more runs. Here is the procedure for the saving of output files:
+    Now proceed to the second part. With all of the data files defined, we have to re-shuffle.
+    Fortunately, Python's garbage collection can handle more than 16 GB of total RAM.
 
     We go through each of the 21 normalized files. Split up the 501 object IDs into, say, 5 groups
-    of 10. So object IDs for group 0 are [0,0,1,1,1,2,...,499,500,500,500], i.e., the first two were
-    from object ID 0, etc. These groups will be distinct, i.e., group 1 might be [4,6,8,10,...],
-    group 2 might be [0,12,204,...], etc., but they should be roughly equal in size.
+    (that's the default). If object IDs for group 0 are [0,0,1,1,1,2,...,499,500,500,500], i.e., the
+    first two were from object ID 0, etc. These groups should be distinct, i.e., one group might be
+    [4,6,8,10,...], another might be [0,12,204,...], etc., but they should be roughly equal in size.
 
     Then, for each group, we copy the grasps that correspond to those object IDs (i.e., columns --
     though we may want to transpose the matrix to make it easier to refer to it by rows) and save
     them into arrays. What this means is, after each of the 21 files has been processed, we have
-    21*5 total data files, all with 1594 rows (we're *NOT* including the object IDs after this
-    point, because with normalization it's not really a "good" feature).
+    21*num_groups total data files, all with 1594 rows (we're *NOT* including the object IDs after
+    this point, because with normalization it's not really a "good" feature).
 
     Then the third procedure (not this method) will randomly pick some ordering to combine these
-    21*5 files into a smaller set of, say, 10 files. This is not true randomization, more like
-    "block randomization" but it's the best I can do on short notice. Basically, if the last of the
-    21 original files is from a different dataset, then it gets split into 5, and then those 5 get
-    mixed in with other data files, so (ideally) those grasps from that special dataset are
-    distributed among those 10 files somehow. To increase the randomness, I can create finer and
-    finer divisons, e.g., using 15 groups instead of 5 groups for each of the 21 files.
+    21*num_groups files into a smaller set of, say, 10 files. This is not true randomization, more
+    like "block randomization" but it's the best I can do on short notice. Basically, if the last of
+    the 21 original files is from a different dataset, then it gets split into groups, and then
+    those get mixed in with other data files, so (ideally) those grasps from that special dataset
+    are distributed among those 10 files somehow. To increase the randomness, I can create finer and
+    finer divisons, e.g., using 15 groups instead of 10 groups for each of the 21 files.
 
-    Remember that all of this MUST get coordinated with ALL of the target files!
+    Remember that all of this MUST get coordinated with the target matrix; use same indexing trick.
 
     :param: num_features The number of features. I should know this in advance. The default is 1595
         since I'm ignoring the three from "center of mass."
@@ -238,13 +229,14 @@ def do_part_two(num_features = 1595, num_groups = 5):
     full_std = np.reshape(full_std[1:], (len(full_std)-1,1))
 
     # Go through each file *again* to change the data for each matrix, and store it in new files.
-    # To be specific, *after* we normalize the full matrix (to get normalized_data), we will have to
-    # split it up into N groups, where N = num_groups. But we have to divide according to object ID.
     for k in range(0, num_files):
         padded_digit = '{0:02d}'.format(k)
         old_data = np.load("grasp_data_" + padded_digit + ".npy")
         object_ID_info = old_data[0] # Get all the object IDs present in this matrix (w/duplicates).
         old_data = old_data.T # Transpose so old_data[i] is the i-th grasp instead of i-th feature.
+
+        # New, don't forget the target! Again, transpose so it's (num_elements x 6)-dimensional.
+        target = np.load("grasp_target_" + padded_digit + ".npy").T
 
         # Randomize the (unique) object IDs for this particular file and split into groups.
         objectIDs_rand = np.random.permutation( np.unique(object_ID_info) )
@@ -260,14 +252,23 @@ def do_part_two(num_features = 1595, num_groups = 5):
             for (index2,val) in enumerate(object_ID_info):
                 if val in list_of_IDs:
                     group_indices.append(index2)
+            assert len(np.unique(np.array(group_indices))) == len(group_indices)
 
-            # With the indices in hand, extract data from old data, dump ID, and transpose.
-            partitioned_data = (old_data[np.array(group_indices)].T)[1:]
+            # With the indices in hand, extract data from old data, dump ID, and transpose. We can
+            # *also* do it the same way with the target data!
+            group_indices = np.array(group_indices)
+            partitioned_data = (old_data[group_indices].T)[1:]
             assert partitioned_data.shape[0] == num_features-1, "partitioned_data.shape[0] = {}".format(partitioned_data.shape[0])
+            partitioned_target = target[group_indices].T
+            assert partitioned_target.shape[0] == 6, "partitioned_target.shape[0] = {}".format(partitioned_target.shape[0])
+            assert partitioned_target.shape[1] == partitioned_data.shape[1]
 
-            # Let's normalize that partitioned data *transposed*. The object ID was already dumped.
+            # Let's normalize that partitioned data *transposed*. And also do the target!
             normalized_data = ((partitioned_data - full_mean) / full_std)
             np.save("grasp_data_norm_" + padded_digit + "_" + padded_index, normalized_data)
+            np.save("grasp_target_norm_" + padded_digit + "_" + padded_index, partitioned_target)
+
+        print("Done with " + padded_digit)
 
     print("\nAll Done! Whew!")
 
@@ -280,34 +281,49 @@ def do_part_three(num_features = 1595, num_output = 10):
     Then, *after* this combination, re-shuffle *again* just to be safe. Then we're done.
     """
 
-    # TODO deal with the target files as well!
+    # Make sure this is the correct naming convention, i.e., "grasp_{data,target}_norm". These
+    # should already be sorted (they HAVE to be aligned) but just to be safe add "sorted".
+    normalized_data_files   = np.array(sorted([x for x in os.listdir(".") if "grasp_data_norm" in x]))
+    normalized_target_files = np.array(sorted([x for x in os.listdir(".") if "grasp_target_norm" in x]))
+    assert len(normalized_data_files) == len(normalized_target_files)
 
-    # Make sure this is the correct naming convention, i.e., "grasp_data_norm".
-    normalized_files = [x for x in os.listdir(".") if "grasp_data_norm" in x]
-    rand_norm_files = np.random.permutation(normalized_files)
-    rand_norm_splits = np.array_split(rand_norm_files, num_output)
+    # Now determine the splits using the indices of files, so we can extract data and targets.
+    indices = np.random.permutation( np.arange(len(normalized_data_files)) )
+    indices_splits = np.array_split(indices, num_output)
 
     # For each output index, we take the list of files to load and (horizontally) combine them.
     for k in range(num_output):
         padded_digit = '{0:02d}'.format(k)
-        files = rand_norm_splits[k]
-        result = np.load(files[0])
-        for i in range(1,len(files)):
-            result = np.concatenate((result, np.load(files[i])), axis=1)
-        assert len(result) == (K-1)
+        indices_in_list = np.array(indices_splits[k])
+        data_files   = normalized_data_files[indices_in_list]
+        target_files = normalized_target_files[indices_in_list]
+        
+        # Serve as the first "baseline" as usual, then build it using concatenation.
+        result_data   = np.load(data_files[0])
+        result_target = np.load(target_files[0])
+
+        for i in range(1,len(indices_in_list)):
+            result_data   = np.concatenate((result_data,   np.load(data_files[i])),   axis=1)
+            result_target = np.concatenate((result_target, np.load(target_files[i])), axis=1)
         
         # At last, save the combined data as text files. And the target. (We'll split inside BIDMach)
-        np.savetxt("grasp_bidmach_data_" + padded_digit + ".txt", result, fmt='%1.7f')
-        #np.savetxt("grasp_bidmach_target_" + padded_digit, result, fmt='1.7%f')
+        print("result_data.shape = {}".format(result_data.shape))
+        print("result_target.shape = {}".format(result_target.shape))
+
+        # Use six digits of decimal precision. Note that data is already normalized.
+        np.savetxt("grasp_bidmach_data_" + padded_digit + ".txt",   result_data,   fmt='%1.6f')
+        np.savetxt("grasp_bidmach_target_" + padded_digit + ".txt", result_target, fmt='%1.6f')
         print("Finished with " + padded_digit)
 
     print("\nAll Done! Whew!")
 
 
 if __name__ == '__main__':
-    # Do NOT do both parts. It's either the first one, or the second one!
+    # Only do ONE of the parts at any given time. Actually, not strictly necessary but helps me to
+    # keep track of whether the code is working correctly. Also, I need to delete files to save on
+    # hard disk space. Yeah.
     K = 1595 # Includes the object ID
     do_part_one()
-    #do_part_two(num_features = K, num_groups = 5)
+    #do_part_two(num_features = K, num_groups = 10)
     #do_part_three(num_features = K, num_output = 10)
 
